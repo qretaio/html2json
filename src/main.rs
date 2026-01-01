@@ -14,9 +14,6 @@ struct Args {
 
     /// Path to JSON extractor spec file
     spec: String,
-
-    #[arg(short, long)]
-    verbose: bool,
 }
 
 #[tokio::main]
@@ -28,10 +25,7 @@ async fn main() -> Result<()> {
     let spec = Spec::from_json(&spec_value)?;
     let extractor = html2json::Extractor::new(&html)?;
     let result = extractor.extract(&spec)?;
-
-    if args.verbose {
-        println!("{}", serde_json::to_string_pretty(&result)?);
-    }
+    println!("{}", serde_json::to_string_pretty(&result)?);
 
     Ok(())
 }
