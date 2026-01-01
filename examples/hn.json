@@ -1,0 +1,17 @@
+{
+  "$": "table.itemlist",
+  "stories": [
+    {
+      "$": "tr.athing",
+      "id": "$ | attr:id",
+      "title": "span.titleline > a",
+      "url": "span.titleline > a | attr:href",
+      "site": "span.titleline > span.sitebit | trim",
+      "points": "+ .subtext .score",
+      "user": "+ .subtext .hnuser",
+      "age": "+ .subtext .age a",
+      "comments": "+ .subtext .subline > a:last-child",
+      "comments_url": "+ .subtext .subline > a:last-child | attr:href"
+    }
+  ]
+}
