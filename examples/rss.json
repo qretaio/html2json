@@ -1,0 +1,20 @@
+{
+  "$": "channel",
+  "title": "title",
+  "link": "link",
+  "description": "description",
+  "language": "language",
+  "lastBuildDate": "lastBuildDate",
+  "items": [
+    {
+      "$": "item",
+      "title": "title",
+      "link": "link",
+      "description": "description",
+      "pubDate": "pubDate",
+      "guid": "guid",
+      "author": "author",
+      "category": "category"
+    }
+  ]
+}

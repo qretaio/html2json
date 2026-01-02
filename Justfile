@@ -2,6 +2,9 @@ lint:
 	cargo clippy
 	cargo test
 
+run html spec:
+    cargo run --bin html2json --features=cli -- {{html}} {{spec}}
+
 # Install the html2json binary
 install:
 	cargo install --path . --features cli
