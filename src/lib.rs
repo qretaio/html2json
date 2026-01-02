@@ -22,11 +22,10 @@
 //! ```
 
 pub mod dom;
-pub mod extractor;
 pub mod pipe;
 pub mod spec;
 
-pub use extractor::Extractor;
+pub use dom::Dom;
 pub use spec::Spec;
 
 use anyhow::Result;
@@ -51,8 +50,8 @@ use anyhow::Result;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn extract(html: &str, spec: &Spec) -> Result<serde_json::Value> {
-    let extractor = Extractor::new(html)?;
-    extractor.extract(spec)
+    let dom = Dom::parse(html)?;
+    dom.extract(spec)
 }
 
 #[cfg(test)]

@@ -2,193 +2,427 @@
 //!
 //! Parses HTML once and reuses the parsed document for all selections.
 
+use ego_tree::NodeId;
 use scraper::{ElementRef, Html, Selector};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::OnceLock;
 
-/// A DOM node with extracted data
+/// A DOM node/element
 ///
-/// Stores element data for use in relative selections.
+/// Lightweight reference to a node in the DOM tree.
+/// Only stores NodeId + DOM reference; everything else is lazy-computed and cached.
 #[derive(Debug, Clone)]
 pub struct Node {
-    /// Element reference (stored as HTML for re-finding in relative selections)
-    html: String,
+    /// Node ID in the DOM tree (O(1) lookup via tree.get())
+    node_id: NodeId,
     /// Cached text content
-    text: String,
-    /// Cached attributes
-    attributes: Vec<(String, String)>,
+    text: OnceLock<String>,
+    /// Cached HTML content
+    html: OnceLock<String>,
+    /// Reference to the DOM tree
+    dom_html: Rc<Html>,
 }
 
+// Implement PartialEq for easier testing
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.node_id == other.node_id
+    }
+}
+impl Eq for Node {}
+
 impl Node {
+    /// Returns the text content of this element
     pub fn text(&self) -> &str {
-        &self.text
+        self.text.get_or_init(|| {
+            // Fast path: get ElementRef directly without going through Result
+            let Some(el) = self
+                .dom_html
+                .tree
+                .get(self.node_id)
+                .and_then(ElementRef::wrap)
+            else {
+                return String::new();
+            };
+
+            let text_content = el.text().collect::<String>();
+            // For void elements, check if next sibling is a text node
+            if text_content.is_empty() && is_void_element(el.value().name()) {
+                get_void_text_from_tree(el, &self.dom_html).unwrap_or(text_content)
+            } else {
+                text_content
+            }
+        })
     }
 
+    /// Returns the value of the specified attribute
     pub fn attr(&self, name: &str) -> Option<&str> {
-        self.attributes
-            .iter()
-            .find(|(k, _)| k == name)
-            .map(|(_, v)| v.as_str())
+        // Fast path: get ElementRef directly
+        let el = self
+            .dom_html
+            .tree
+            .get(self.node_id)
+            .and_then(ElementRef::wrap)?;
+        el.value().attrs().find(|(k, _)| *k == name).map(|(_, v)| v)
     }
 
+    /// Returns the HTML string of this element (cached)
     pub fn html(&self) -> &str {
-        &self.html
+        self.html.get_or_init(|| {
+            // Fast path: get ElementRef directly
+            self.dom_html
+                .tree
+                .get(self.node_id)
+                .and_then(ElementRef::wrap)
+                .map(|el| el.html().to_string())
+                .unwrap_or_default()
+        })
+    }
+
+    /// Get the ElementRef for this node (O(1) lookup by NodeId)
+    pub(crate) fn element_ref(&self) -> Result<ElementRef<'_>, anyhow::Error> {
+        self.dom_html
+            .tree
+            .get(self.node_id)
+            .and_then(ElementRef::wrap)
+            .ok_or_else(|| anyhow::anyhow!("Element not found in DOM tree"))
     }
 }
 
 /// DOM parser - parses HTML once and reuses for all queries
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Dom {
-    /// Parsed HTML document (owned, no lifetime issues in scraper 0.25+)
-    html: Html,
+    /// Parsed HTML document
+    html: Rc<Html>,
 }
 
 impl Dom {
+    /// Parse HTML string into a DOM
     pub fn parse(source: &str) -> Result<Self, anyhow::Error> {
         Ok(Self {
-            html: Html::parse_fragment(source),
+            html: Rc::new(Html::parse_fragment(source)),
         })
     }
 
-    pub fn select(&self, selector_str: &str) -> Result<Vec<Node>, anyhow::Error> {
-        let selector = Selector::parse(selector_str)
-            .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", selector_str, e))?;
-        Ok(self
-            .html
-            .select(&selector)
-            .map(|el| node_from_element(el, &self.html))
-            .collect())
-    }
-
-    pub fn select_one(&self, selector_str: &str) -> Result<Option<Node>, anyhow::Error> {
+    /// Query selector - returns first matching element
+    pub fn query_selector(&self, selector_str: &str) -> Result<Option<Node>, anyhow::Error> {
         let selector = Selector::parse(selector_str)
             .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", selector_str, e))?;
         Ok(self
             .html
             .select(&selector)
             .next()
-            .map(|el| node_from_element(el, &self.html)))
+            .map(|el| node_from_element(el, self.html.clone())))
     }
 
-    pub fn select_relative(
+    /// Query selector all - returns all matching elements
+    pub fn query_selector_all(&self, selector_str: &str) -> Result<Vec<Node>, anyhow::Error> {
+        let selector = Selector::parse(selector_str)
+            .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", selector_str, e))?;
+        Ok(self
+            .html
+            .select(&selector)
+            .map(|el| node_from_element(el, self.html.clone()))
+            .collect())
+    }
+
+    /// Query selector relative to a base element
+    pub fn query_selector_relative(
+        &self,
+        base: &Node,
+        selector_str: &str,
+    ) -> Result<Option<Node>, anyhow::Error> {
+        let selector = Selector::parse(selector_str)
+            .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", selector_str, e))?;
+        let base_el = base.element_ref()?;
+        Ok(base_el
+            .select(&selector)
+            .next()
+            .map(|el| node_from_element(el, self.html.clone())))
+    }
+
+    /// Query selector all relative to a base element
+    pub fn query_selector_all_relative(
         &self,
         base: &Node,
         selector_str: &str,
     ) -> Result<Vec<Node>, anyhow::Error> {
-        let base_el = self.find_element_by_html(base.html())?;
-
-        // Handle direct child selector prefix
-        let effective_selector = selector_str
-            .trim()
-            .strip_prefix('>')
-            .map(|s| s.trim())
-            .unwrap_or(selector_str);
-
-        if effective_selector.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let relative_selector = Selector::parse(effective_selector)
-            .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", effective_selector, e))?;
-
+        let selector = Selector::parse(selector_str)
+            .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", selector_str, e))?;
+        let base_el = base.element_ref()?;
         Ok(base_el
-            .select(&relative_selector)
-            .map(|el| node_from_element(el, &self.html))
+            .select(&selector)
+            .map(|el| node_from_element(el, self.html.clone()))
             .collect())
     }
 
-    pub fn select_one_relative(
-        &self,
-        base: &Node,
-        selector_str: &str,
-    ) -> Result<Option<Node>, anyhow::Error> {
-        Ok(self.select_relative(base, selector_str)?.into_iter().next())
+    /// Extract JSON data from this DOM using a spec
+    ///
+    /// This is the main extraction method that applies the spec to the parsed HTML.
+    pub fn extract(&self, spec: &crate::spec::Spec) -> Result<serde_json::Value, anyhow::Error> {
+        match spec {
+            crate::spec::Spec::Object(obj_spec) => self.extract_object(obj_spec, None),
+            crate::spec::Spec::Array(arr_spec) => self.extract_array(arr_spec, None),
+            crate::spec::Spec::Literal(lit) => Ok(self.literal_to_json(lit)),
+        }
     }
 
-    /// Find the next sibling element containing elements matching the selector
-    /// Returns the sibling element itself, not the matched descendant
-    pub fn select_next_sibling(
+    /// Extract an object from the DOM
+    fn extract_object(
         &self,
-        base: &Node,
-        selector_str: &str,
-    ) -> Result<Option<Node>, anyhow::Error> {
-        let base_el = self.find_element_by_html(base.html())?;
-        let selector = Selector::parse(selector_str)
-            .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", selector_str, e))?;
+        spec: &crate::spec::ObjectSpec,
+        scope_node: Option<&Node>,
+    ) -> Result<serde_json::Value, anyhow::Error> {
+        let scope = self.resolve_scope(&spec.scope_selector, scope_node)?;
+        let result = spec
+            .fields
+            .iter()
+            .map(|(key, field_spec): (&String, &crate::spec::FieldSpec)| {
+                self.extract_field(field_spec, scope.as_ref())
+                    .map(|value| (key.clone(), value))
+            })
+            .collect::<Result<serde_json::Map<_, _>, _>>()?;
 
-        for sibling in base_el.next_siblings() {
-            if let Some(sib_el) = ElementRef::wrap(sibling)
-                && sib_el.select(&selector).next().is_some()
-            {
-                return Ok(Some(node_from_element(sib_el, &self.html)));
-            }
+        Ok(serde_json::Value::Object(result))
+    }
+
+    /// Extract an object from fields (helper to avoid cloning)
+    fn extract_object_from_fields(
+        &self,
+        fields: &HashMap<String, crate::spec::FieldSpec>,
+        scope: Option<&Node>,
+    ) -> Result<serde_json::Value, anyhow::Error> {
+        let result = fields
+            .iter()
+            .map(|(key, field_spec): (&String, &crate::spec::FieldSpec)| {
+                self.extract_field(field_spec, scope)
+                    .map(|value| (key.clone(), value))
+            })
+            .collect::<Result<serde_json::Map<_, _>, _>>()?;
+
+        Ok(serde_json::Value::Object(result))
+    }
+
+    /// Extract an array from the DOM
+    fn extract_array(
+        &self,
+        spec: &crate::spec::ArraySpec,
+        scope: Option<&Node>,
+    ) -> Result<serde_json::Value, anyhow::Error> {
+        const DIRECT_CHILD_PREFIX: char = '>';
+
+        // Special case: self-selector in array context
+        let is_self_ref = spec
+            .item_spec
+            .scope_selector
+            .as_ref()
+            .map(|s: &crate::spec::SelectorRef| s.as_str() == "$")
+            .unwrap_or(false);
+
+        if is_self_ref && let Some(base) = scope {
+            let obj = self.extract_object(&spec.item_spec, Some(base))?;
+            return Ok(serde_json::Value::Array(vec![obj]));
         }
 
-        Ok(None)
+        // Get the effective selector
+        let selector_str = spec
+            .item_spec
+            .scope_selector
+            .as_ref()
+            .map(|s: &crate::spec::SelectorRef| s.as_str())
+            .unwrap_or("*");
+
+        let effective_selector = selector_str
+            .trim()
+            .strip_prefix(DIRECT_CHILD_PREFIX)
+            .map(|s: &str| s.trim())
+            .unwrap_or(selector_str);
+
+        let nodes = match scope {
+            Some(base) => self.query_selector_all_relative(base, effective_selector)?,
+            None => self.query_selector_all(effective_selector)?,
+        };
+
+        if nodes.is_empty() {
+            return Ok(serde_json::Value::Array(Vec::new()));
+        }
+
+        let results = nodes
+            .iter()
+            .map(|node| self.extract_object_from_fields(&spec.item_spec.fields, Some(node)))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(serde_json::Value::Array(results))
     }
 
-    /// Select using a pre-parsed `Arc<Selector>` - optimized path
-    pub fn select_one_with_selector(
+    /// Extract a single field value
+    fn extract_field(
         &self,
-        selector: Arc<Selector>,
-    ) -> Result<Option<Node>, anyhow::Error> {
-        Ok(self
-            .html
-            .select(&selector)
-            .next()
-            .map(|el| node_from_element(el, &self.html)))
-    }
-
-    /// Select relative using a pre-parsed `Arc<Selector>` - optimized path
-    pub fn select_one_relative_with_selector(
-        &self,
-        base: &Node,
-        selector: Arc<Selector>,
-    ) -> Result<Option<Node>, anyhow::Error> {
-        let base_el = self.find_element_by_html(base.html())?;
-        Ok(base_el
-            .select(&selector)
-            .next()
-            .map(|el| node_from_element(el, &self.html)))
-    }
-
-    /// Find element by its HTML content
-    fn find_element_by_html(&self, target_html: &str) -> Result<ElementRef<'_>, anyhow::Error> {
-        // Iterate through tree to find matching element
-        for node in self.html.tree.nodes() {
-            if let Some(el) = ElementRef::wrap(node)
-                && el.html() == target_html
-            {
-                return Ok(el);
+        spec: &crate::spec::FieldSpec,
+        scope: Option<&Node>,
+    ) -> Result<serde_json::Value, anyhow::Error> {
+        match spec {
+            crate::spec::FieldSpec::Literal(lit) => Ok(self.literal_to_json(lit)),
+            crate::spec::FieldSpec::Nested(obj_spec) => self.extract_object(obj_spec, scope),
+            crate::spec::FieldSpec::NestedArray(arr_spec) => self.extract_array(arr_spec, scope),
+            crate::spec::FieldSpec::Selector(selector_ref, pipes) => {
+                let node = self.select_node(selector_ref, scope)?;
+                Self::apply_pipes_to_node(node, pipes)
             }
         }
-        Err(anyhow::anyhow!("Element not found"))
+    }
+
+    /// Select a node based on a selector and optional scope
+    fn select_node(
+        &self,
+        selector: &crate::spec::SelectorRef,
+        scope: Option<&Node>,
+    ) -> Result<Option<Node>, anyhow::Error> {
+        const NEXT_SIBLING_PREFIX: &str = "+ ";
+        const DIRECT_CHILD_PREFIX: char = '>';
+
+        if selector.as_str() == "$" {
+            return Ok(scope.cloned());
+        }
+
+        // Handle next sibling selector
+        if let Some(inner) = selector.as_str().strip_prefix(NEXT_SIBLING_PREFIX) {
+            let Some(base) = scope else {
+                return Err(anyhow::anyhow!("Next sibling selector requires a scope"));
+            };
+            let inner_sel = Selector::parse(inner)
+                .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", inner, e))?;
+            let base_el = base.element_ref()?;
+            for sibling in base_el.next_siblings() {
+                if let Some(sib_el) = ElementRef::wrap(sibling)
+                    && let Some(first_match) = sib_el.select(&inner_sel).next()
+                {
+                    return Ok(Some(node_from_element(first_match, self.html.clone())));
+                }
+            }
+            return Ok(None);
+        }
+
+        // Handle direct child selector
+        if selector.as_str().starts_with(DIRECT_CHILD_PREFIX) {
+            let effective = selector.as_str()[1..].trim();
+            return match scope {
+                Some(base) => self.query_selector_relative(base, effective),
+                None => self.query_selector(effective),
+            };
+        }
+
+        // Regular selector
+        let selector_str = selector.as_str();
+        match scope {
+            Some(base) => self.query_selector_relative(base, selector_str),
+            None => self.query_selector(selector_str),
+        }
+    }
+
+    /// Resolve a scope selector to a Node
+    fn resolve_scope(
+        &self,
+        selector: &Option<crate::spec::SelectorRef>,
+        base: Option<&Node>,
+    ) -> Result<Option<Node>, anyhow::Error> {
+        let Some(selector) = selector else {
+            return Ok(base.cloned());
+        };
+
+        if selector.as_str() == "$" {
+            Ok(base.cloned())
+        } else if selector.as_str().starts_with('>') {
+            let effective = selector.as_str()[1..].trim();
+            match base {
+                Some(b) => self.query_selector_relative(b, effective),
+                None => self.query_selector(effective),
+            }
+        } else {
+            let selector_str = selector.as_str();
+            match base {
+                Some(b) => self.query_selector_relative(b, selector_str),
+                None => self.query_selector(selector_str),
+            }
+        }
+    }
+
+    /// Convert a literal value to JSON
+    fn literal_to_json(&self, lit: &crate::spec::LiteralValue) -> serde_json::Value {
+        match lit {
+            crate::spec::LiteralValue::String(s) => serde_json::Value::String(s.clone()),
+            crate::spec::LiteralValue::Number(n) => serde_json::Value::from(*n),
+            crate::spec::LiteralValue::Boolean(b) => serde_json::Value::from(*b),
+            crate::spec::LiteralValue::Null => serde_json::Value::Null,
+        }
+    }
+
+    /// Apply pipe transformations to a node
+    fn apply_pipes_to_node(
+        node: Option<Node>,
+        pipes: &[crate::spec::PipeCommand],
+    ) -> Result<serde_json::Value, anyhow::Error> {
+        use crate::pipe::apply_pipe;
+        use crate::spec::PipeCommand;
+
+        let Some(n) = node else {
+            return Ok(serde_json::Value::Null);
+        };
+
+        let (source_pipe, transform_pipes) = crate::pipe::split_source_and_transforms(pipes);
+
+        let initial_value = match source_pipe {
+            Some(PipeCommand::Attr(attr_name)) => n
+                .attr(attr_name)
+                .map(|s| serde_json::Value::String(s.to_string()))
+                .unwrap_or(serde_json::Value::Null),
+            Some(PipeCommand::Void) => {
+                let text_content = n.text();
+                if text_content.is_empty() && is_void_element_from_html(n.html()) {
+                    get_void_text_from_html(n.html())
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::String(text_content.to_string()))
+                } else {
+                    serde_json::Value::String(text_content.to_string())
+                }
+            }
+            None => serde_json::Value::String(n.text().to_string()),
+            Some(_) => return Err(anyhow::anyhow!("Non-source pipe in source_pipe position")),
+        };
+
+        transform_pipes
+            .into_iter()
+            .try_fold(initial_value, apply_pipe)
     }
 }
 
-fn node_from_element(el: ElementRef, tree: &Html) -> Node {
-    let attrs: Vec<(String, String)> = el
-        .value()
-        .attrs()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
+fn node_from_element(el: ElementRef, tree: Rc<Html>) -> Node {
+    let node_id = el.id();
 
-    // Get text content normally
-    let text_content = el.text().collect::<String>();
+    Node {
+        node_id,
+        text: OnceLock::new(),
+        html: OnceLock::new(),
+        dom_html: tree,
+    }
+}
 
-    // For void elements, check if next sibling is a text node (common in RSS/XML)
-    let text = if text_content.is_empty() && is_void_element(el.value().name()) {
-        // Look for text in next sibling (where RSS link text ends up)
-        // The text node becomes a sibling after the void element
-        let node_id = el.id();
-        tree.tree
-            .get(node_id)
-            .and_then(|node_ref| node_ref.parent())
-            .and_then(|parent| {
-                let parent_ref = tree.tree.get(parent.id())?;
+/// Get text content from void element's next sibling (for RSS/XML patterns)
+fn get_void_text_from_tree(el: ElementRef, _tree: &Rc<Html>) -> Option<String> {
+    // For void elements in RSS/XML, text often appears as next sibling
+    let node_id = el.id();
+    let tree = el.tree();
+
+    // Find parent and look for next sibling after current element
+    tree.get(node_id).and_then(|node_ref| {
+        node_ref.parent().and_then(|parent_ref| {
+            tree.get(parent_ref.id()).and_then(|parent_ref| {
                 let mut found_current = false;
+
                 for child_ref in parent_ref.children() {
                     if found_current {
-                        // This is the next sibling - check if it's a text node
+                        // Found next sibling - check if it's a text node
                         if let Some(text) = child_ref.value().as_text() {
                             return Some(text.trim().to_string());
                         }
@@ -198,18 +432,10 @@ fn node_from_element(el: ElementRef, tree: &Html) -> Node {
                         found_current = true;
                     }
                 }
-                None::<String>
+                None
             })
-            .unwrap_or_else(|| text_content.clone())
-    } else {
-        text_content
-    };
-
-    Node {
-        html: el.html(),
-        text,
-        attributes: attrs,
-    }
+        })
+    })
 }
 
 /// Check if element name is an HTML void element
@@ -231,4 +457,34 @@ pub fn is_void_element(name: &str) -> bool {
             | "track"
             | "wbr"
     )
+}
+
+/// Check if HTML represents a void element
+fn is_void_element_from_html(html: &str) -> bool {
+    if let Some(tag_end) = html.find('>') {
+        let tag = &html[1..tag_end.min(html.len())];
+        let tag_name = tag.split_whitespace().next().unwrap_or("");
+        is_void_element(tag_name)
+    } else {
+        false
+    }
+}
+
+/// Extract text content from sibling node's HTML representation
+fn get_void_text_from_html(html: &str) -> Option<String> {
+    // Find the closing of the void element
+    if let Some(close_pos) = html.find('>') {
+        let after_open = &html[close_pos + 1..];
+
+        // Look for text up to the next '<'
+        if let Some(next_tag) = after_open.find('<') {
+            let text = &after_open[..next_tag];
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    None
 }

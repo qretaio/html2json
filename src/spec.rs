@@ -7,51 +7,23 @@
 //! - Literal values (strings, numbers, booleans)
 //! - Pipe transformations for data manipulation
 
-use scraper::Selector;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
 
-/// A selector reference that can be either unparsed (String) or parsed (`Arc<Selector>`)
+/// A CSS selector string
 #[derive(Debug, Clone, PartialEq)]
-pub enum SelectorRef {
-    Unparsed(String),
-    Parsed(String, Arc<Selector>), // Store original string + parsed selector
-}
+pub struct SelectorRef(String);
 
 impl SelectorRef {
-    /// Get the parsed selector, parsing if necessary
-    pub fn get(&self) -> Result<Arc<Selector>, anyhow::Error> {
-        match self {
-            SelectorRef::Parsed(_, s) => Ok(s.clone()),
-            SelectorRef::Unparsed(s) => {
-                let selector = Selector::parse(s)
-                    .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", s, e))?;
-                Ok(Arc::new(selector))
-            }
-        }
-    }
-
-    /// Get the original selector string
+    /// Get the selector string
     pub fn as_str(&self) -> &str {
-        match self {
-            SelectorRef::Unparsed(s) => s,
-            SelectorRef::Parsed(s, _) => s,
-        }
-    }
-
-    /// Get the unparsed string if this is Unparsed, None otherwise
-    pub fn as_unparsed(&self) -> Option<&str> {
-        match self {
-            SelectorRef::Unparsed(s) => Some(s),
-            SelectorRef::Parsed(_, _) => None,
-        }
+        &self.0
     }
 
     /// Check if this is a self-reference selector ($)
     pub fn is_self_ref(&self) -> bool {
-        self.as_str() == "$"
+        self.0 == "$"
     }
 }
 
@@ -164,7 +136,7 @@ impl Spec {
         for (key, val) in obj {
             if key == "$" {
                 if let Some(s) = val.as_str() {
-                    scope_selector = Some(SelectorRef::Unparsed(s.to_string()));
+                    scope_selector = Some(SelectorRef(s.to_string()));
                 }
             } else {
                 fields.insert(key.clone(), FieldSpec::from_json(val)?);
@@ -186,7 +158,7 @@ impl FieldSpec {
                     return Ok(FieldSpec::Literal(literal));
                 }
                 let (selector, pipes) = Self::parse_selector_string(s)?;
-                Ok(FieldSpec::Selector(SelectorRef::Unparsed(selector), pipes))
+                Ok(FieldSpec::Selector(SelectorRef(selector), pipes))
             }
             Value::Number(n) => {
                 let literal = LiteralValue::Number(n.as_f64().unwrap_or(0.0));

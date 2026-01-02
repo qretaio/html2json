@@ -35,8 +35,8 @@ async fn main() -> Result<()> {
     let html = fetch_html(&args.input).await?;
     let spec_value = load_spec(&args.spec)?;
     let spec = Spec::from_json(&spec_value)?;
-    let extractor = html2json::Extractor::new(&html)?;
-    let result = extractor.extract(&spec)?;
+    let dom = html2json::Dom::parse(&html)?;
+    let result = dom.extract(&spec)?;
 
     if let Some(check_path) = args.check {
         // Compare against expected output
