@@ -1,0 +1,36 @@
+{
+  "description": "Latest technology news and tutorials",
+  "items": [
+    {
+      "author": "john@example.com",
+      "category": "Programming",
+      "description": "Learn the basics of Rust programming language",
+      "guid": "https://example.com/rust-intro",
+      "link": "https://example.com/rust-intro",
+      "pubDate": "Fri, 02 Jan 2026 10:00:00 +0000",
+      "title": "Introduction to Rust Programming"
+    },
+    {
+      "author": "jane@example.com",
+      "category": "Web Development",
+      "description": "A comprehensive guide to WebAssembly",
+      "guid": "https://example.com/webassembly-guide",
+      "link": "https://example.com/webassembly-guide",
+      "pubDate": "Thu, 01 Jan 2026 15:30:00 +0000",
+      "title": "Understanding WebAssembly"
+    },
+    {
+      "author": "bob@example.com",
+      "category": "Artificial Intelligence",
+      "description": "Getting started with machine learning",
+      "guid": "https://example.com/ml-basics",
+      "link": "https://example.com/ml-basics",
+      "pubDate": "Wed, 31 Dec 2025 09:00:00 +0000",
+      "title": "Machine Learning Basics"
+    }
+  ],
+  "language": "en-us",
+  "lastBuildDate": "Fri, 02 Jan 2026 12:00:00 +0000",
+  "link": "https://example.com",
+  "title": "Tech Blog"
+}

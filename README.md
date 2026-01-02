@@ -35,9 +35,19 @@ just install
 ## Examples
 
 ```bash
+# Extract from URL
 html2json "https://news.ycombinator.com/" examples/hn.json
+
+# Extract from file
 html2json examples/hn.html examples/hn.json
+
+# Check output matches expected JSON (useful for testing/CI)
+html2json examples/hn.html examples/hn.json --check expected.json
 ```
+
+### Options
+
+- `--check, -c <FILE>` - Compare output against expected JSON file. Exits with 0 if match, 1 if differ (with colored diff).
 
 ## LICENSE
 

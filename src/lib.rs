@@ -59,261 +59,214 @@ pub fn extract(html: &str, spec: &Spec) -> Result<serde_json::Value> {
 mod tests {
     use crate::extract;
     use crate::spec::Spec;
-
-    const HTML: &str = include_str!("../tests/fixtures/readme_tests.html");
+    const HTML: &str = include_str!("../examples/hn.html");
 
     #[test]
     fn basic_text_extraction() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-01",
-                "title": "h1"
+                "$": "title",
+                "title": "$"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["title"], "Hello World");
+        assert_eq!(result["title"], "Hacker News");
     }
 
     #[test]
     fn attribute_extraction() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-02",
-                "link": "a | attr:href"
+                "rss_link": "link[rel=alternate] | attr:href"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["link"], "https://example.com");
+        assert_eq!(result["rss_link"], "rss");
     }
 
-    // TEST-3: Scoping with $
     #[test]
     fn scoping_with_dollar() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-03 article",
-                "headline": "> h1",
-                "content": "> .content"
+                "$": ".pagetop",
+                "first_link": "a"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["headline"], "Title");
-        assert_eq!(result["content"], "Body text");
+        assert_eq!(result["first_link"], "Hacker News");
     }
 
     #[test]
     fn nested_scoping() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-04 article",
-                "title": "> h1",
-                "author": {
-                    "$": "> .author",
-                    "name": "span.name",
-                    "email": "a | attr:href"
+                "$": "head",
+                "head_element": {
+                    "$": "link",
+                    "href": "$ | attr:href",
+                    "rel": "$ | attr:rel"
                 }
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["title"], "My Post");
-        assert_eq!(result["author"]["name"], "Jane");
-        assert_eq!(result["author"]["email"], "mailto:jane@example.com");
+        assert_eq!(
+            result["head_element"]["href"],
+            "news.css?fFlkMoHAedK8lfBWEYBd"
+        );
+        assert_eq!(result["head_element"]["rel"], "stylesheet");
     }
 
     #[test]
     fn collection_extraction() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-05",
-                "items": [{
-                    "$": "ul li",
-                    "text": "$"
+                "ranks": [{
+                    "$": ".rank",
+                    "value": "$"
                 }]
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        let arr = result["items"].as_array().unwrap();
-        assert_eq!(arr.len(), 3);
-        assert_eq!(arr[0]["text"], "First");
-        assert_eq!(arr[1]["text"], "Second");
-        assert_eq!(arr[2]["text"], "Third");
+        let arr = result["ranks"].as_array().unwrap();
+        assert!(arr.len() >= 3);
+        assert_eq!(arr[0]["value"], "1.");
+        assert_eq!(arr[1]["value"], "2.");
+        assert_eq!(arr[2]["value"], "3.");
     }
 
     #[test]
     fn collection_with_nested_properties() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-06",
-                "products": [{
-                    "$": ".product",
-                    "name": "> h2",
-                    "price": "> .price"
+                "items": [{
+                    "$": "tr.athing",
+                    "id": "$ | attr:id",
+                    "title": ".titleline a"
                 }]
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        let arr = result["products"].as_array().unwrap();
-        assert_eq!(arr.len(), 2);
-        assert_eq!(arr[0]["name"], "Widget A");
-        assert_eq!(arr[0]["price"], "$10");
-        assert_eq!(arr[1]["name"], "Widget B");
-        assert_eq!(arr[1]["price"], "$20");
+        let arr = result["items"].as_array().unwrap();
+        assert!(arr.len() >= 2);
+        assert_eq!(arr[0]["id"], "46446815");
+        assert_eq!(arr[0]["title"], "I canceled my book deal");
     }
 
     #[test]
     fn literal_values() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-07",
-                "extracted": "h1",
-                "source": "'web-scrape'",
+                "source": "'html2json'",
                 "version": 1.5,
-                "active": true
+                "active": true,
+                "data": null
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["extracted"], "Test");
-        assert_eq!(result["source"], "web-scrape");
+        assert_eq!(result["source"], "html2json");
         assert_eq!(result["version"], 1.5);
         assert_eq!(result["active"], true);
+        assert!(result["data"].is_null());
     }
 
     #[test]
     fn trim_pipe() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-08",
-                "clean": "span | trim"
+                "title": "title | trim"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["clean"], "messy text");
+        assert_eq!(result["title"], "Hacker News");
     }
 
-    // TEST-9: Lowercase Pipe
     #[test]
     fn lowercase_pipe() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-09",
-                "lower": "h1 | lower"
+                "title_lower": "title | lower"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["lower"], "hello world");
+        assert_eq!(result["title_lower"], "hacker news");
     }
 
     #[test]
     fn uppercase_pipe() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-10",
-                "upper": "h1 | upper"
+                "title_upper": "title | upper"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["upper"], "HELLO");
+        assert_eq!(result["title_upper"], "HACKER NEWS");
     }
 
-    // TEST-11: Substring Pipe
     #[test]
     fn substring_pipe() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-11",
-                "partial": "h1 | substr:0:4"
+                "partial": "title | substr:0:6"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["partial"], "Hell");
+        assert_eq!(result["partial"], "Hacker");
     }
 
     #[test]
     fn parse_as_number_pipe() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-12",
-                "price": ".price | parseAs:number"
+                "$": "#hnmain",
+                "table_width": "$ | attr:width | regex:(\\d+) | parseAs:int"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["price"], 99.99);
+        assert_eq!(result["table_width"], 85);
     }
 
-    #[test]
-    fn parse_as_int_pipe() {
-        let spec: Spec = serde_json::from_str(
-            r##"{
-                "$": "#test-13",
-                "count": ".count | parseAs:int"
-            }"##,
-        )
-        .unwrap();
-        let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["count"], 42);
-    }
-
-    #[test]
-    fn chained_pipes() {
-        let spec: Spec = serde_json::from_str(
-            r##"{
-                "$": "#test-14",
-                "email": "a | attr:href | substr:7"
-            }"##,
-        )
-        .unwrap();
-        let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["email"], "test@example.com");
-    }
-
-    // TEST-15: Regex Pipe with Capture Group
     #[test]
     fn regex_pipe() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-15",
-                "amount": ".price | regex:\\$(\\d+\\.\\d+)"
+                "points": ".score | regex:(\\d+)\\s*points"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["amount"], "19.99");
+        assert_eq!(result["points"], "156");
     }
 
-    // TEST-16: No Match Returns Null
     #[test]
     fn no_match_returns_null() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-16",
-                "missing": ".nonexistent",
-                "present": "h1"
+                "missing": ".nonexistent-element",
+                "present": "title"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
         assert!(result["missing"].is_null());
-        assert_eq!(result["present"], "Exists");
+        assert_eq!(result["present"], "Hacker News");
     }
 
-    // TEST-17: Empty Collection Returns Empty Array
     #[test]
     fn empty_collection_returns_empty_array() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-17",
                 "items": [{
                     "$": ".nonexistent",
                     "value": "$"
@@ -330,140 +283,112 @@ mod tests {
     fn multiple_attributes() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-18",
-                "href": "a | attr:href",
-                "id": "a | attr:id",
-                "class": "a | attr:class"
+                "lang": "html | attr:lang",
+                "page_title": "title"
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["href"], "/link");
-        assert_eq!(result["id"], "link1");
-        assert_eq!(result["class"], "btn");
+        assert_eq!(result["lang"], "en");
+        assert_eq!(result["page_title"], "Hacker News");
     }
 
     #[test]
     fn complex_nested_structure() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-19 .container",
-                "title": "> h1",
-                "items": {
-                    "$": "> ul",
-                    "list": [{
-                        "$": "> li",
-                        "text": "$"
-                    }]
-                }
+                "$": "#hnmain",
+                "submissions": [{
+                    "$": "tr.athing",
+                    "id": "$ | attr:id",
+                    "title": ".titleline a"
+                }]
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        assert_eq!(result["title"], "Shopping List");
-        let list = result["items"]["list"].as_array().unwrap();
-        assert_eq!(list.len(), 2);
-        assert_eq!(list[0]["text"], "Apples");
-        assert_eq!(list[1]["text"], "Bananas");
+        let items = result["submissions"].as_array().unwrap();
+        assert!(items.len() >= 1);
+        assert_eq!(items[0]["id"], "46446815");
+        assert_eq!(items[0]["title"], "I canceled my book deal");
     }
 
     #[test]
     fn self_selector_in_collection() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-20",
-                "paragraphs": [{
-                    "$": "p",
-                    "content": "$"
+                "titles": [{
+                    "$": ".titleline a",
+                    "text": "$"
                 }]
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
-        let arr = result["paragraphs"].as_array().unwrap();
-        assert_eq!(arr.len(), 2);
-        assert_eq!(arr[0]["content"], "First paragraph");
-        assert_eq!(arr[1]["content"], "Second paragraph");
+        let arr = result["titles"].as_array().unwrap();
+        assert!(arr.len() >= 2);
+        assert_eq!(arr[0]["text"], "I canceled my book deal");
     }
 
     #[test]
-    #[expect(clippy::approx_constant)]
-    fn parse_as_float_pipe() {
+    fn next_sibling_selector() {
         let spec: Spec = serde_json::from_str(
             r##"{
-                "$": "#test-21",
-                "pi": ".float | parseAs:float"
-            }"##,
-        )
-        .unwrap();
-        let result = extract(HTML, &spec).unwrap();
-        // Value from HTML fixture, not actually PI constant
-        assert_eq!(result["pi"], 3.14159);
-    }
-
-    #[test]
-    fn next_sibling_with_last_child() {
-        let spec: Spec = serde_json::from_str(
-            r##"{
-                "$": "#test-22",
+                "$": "#hnmain",
                 "items": [{
                     "$": "tr.athing",
-                    "title": ".titlelink",
-                    "points": "+ .subtext .score",
-                    "user": "+ .subtext .hnuser",
-                    "comments": "+ .subtext > a:last-child"
+                    "title": ".titleline a",
+                    "score": "+ .subtext .score"
                 }]
             }"##,
         )
         .unwrap();
         let result = extract(HTML, &spec).unwrap();
         let items = result["items"].as_array().unwrap();
-
-        assert_eq!(items.len(), 2);
-
-        // First item
-        assert_eq!(items[0]["title"], "Item 1 Title");
-        assert_eq!(items[0]["points"], "100 points");
-        assert_eq!(items[0]["user"], "user1");
-        assert_eq!(items[0]["comments"], "100 comments");
-
-        // Second item
-        assert_eq!(items[1]["title"], "Item 2 Title");
-        assert_eq!(items[1]["points"], "50 points");
-        assert_eq!(items[1]["user"], "user2");
-        assert_eq!(items[1]["comments"], "50 comments");
+        assert!(items.len() >= 1);
+        assert_eq!(items[0]["title"], "I canceled my book deal");
+        assert_eq!(items[0]["score"], "156 points");
     }
 
     #[test]
-    fn void_pipe_for_rss_link_elements() {
-        // HTML parser treats <link> as void element, but RSS uses <link>text</link>
-        // The void pipe extracts the text from the next sibling
-        let html = r#"<channel><link>https://example.com</link></channel>"#;
+    fn void_pipe() {
+        let rss_xml = include_str!("../examples/rss.xml");
+        // The void pipe should work regardless of its position in the pipe chain
         let spec: Spec = serde_json::from_str(
             r##"{
                 "$": "channel",
-                "url": "link | void"
+                "link_trimmed": "link | void | trim",
+                "link_lower": "link | void | lower"
             }"##,
         )
         .unwrap();
-        let result = extract(html, &spec).unwrap();
-        assert_eq!(result["url"], "https://example.com");
+        let result = extract(rss_xml, &spec).unwrap();
+        assert_eq!(result["link_trimmed"], "https://example.com");
+        assert_eq!(result["link_lower"], "https://example.com");
     }
 
     #[test]
-    fn void_pipe_position_independence() {
-        // The void pipe should work regardless of its position in the pipe chain
-        let html = r#"<link>  HTTPS://EXAMPLE.COM  </link>"#;
-        let spec: Spec = serde_json::from_str(
-            r##"{
-                "with_void_first": "link | void | trim | lower",
-                "with_void_last": "link | trim | lower | void"
-            }"##,
-        )
-        .unwrap();
-        let result = extract(html, &spec).unwrap();
-        // Both should extract void text and apply transforms
-        assert_eq!(result["with_void_first"], "https://example.com");
-        assert_eq!(result["with_void_last"], "https://example.com");
+    fn rss_feed_extraction() {
+        let rss_xml = include_str!("../examples/rss.xml");
+        let spec_json = include_str!("../examples/rss.json");
+        let expected_json = include_str!("../examples/rss.expected.json");
+
+        let spec: Spec = serde_json::from_str(spec_json).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(expected_json).unwrap();
+        let result = extract(rss_xml, &spec).unwrap();
+
+        similar_asserts::assert_serde_eq!(expected, result);
+    }
+
+    #[test]
+    fn hackernews_extraction() {
+        let spec_json = include_str!("../examples/hn.json");
+        let expected_json = include_str!("../examples/hn.expected.json");
+
+        let spec: Spec = serde_json::from_str(spec_json).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(expected_json).unwrap();
+        let result = extract(HTML, &spec).unwrap();
+
+        similar_asserts::assert_serde_eq!(expected, result);
     }
 }

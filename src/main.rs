@@ -1,8 +1,15 @@
 use anyhow::Result;
 use clap::Parser;
 use html2json::Spec;
+use similar::{ChangeTag, TextDiff};
 use std::sync::OnceLock;
 use url::Url;
+
+// ANSI color codes
+const RED: &str = "\x1b[31m";
+const GREEN: &str = "\x1b[32m";
+const RESET: &str = "\x1b[0m";
+const BOLD: &str = "\x1b[1m";
 
 /// html2json - Extract JSON from HTML using CSS selectors
 #[derive(Parser, Debug)]
@@ -15,6 +22,10 @@ struct Args {
 
     /// Path to JSON extractor spec file
     spec: String,
+
+    /// Check output matches expected JSON file (shows diff if different)
+    #[arg(short, long, value_name = "FILE")]
+    check: Option<String>,
 }
 
 #[tokio::main]
@@ -26,9 +37,48 @@ async fn main() -> Result<()> {
     let spec = Spec::from_json(&spec_value)?;
     let extractor = html2json::Extractor::new(&html)?;
     let result = extractor.extract(&spec)?;
-    println!("{}", serde_json::to_string_pretty(&result)?);
+
+    if let Some(check_path) = args.check {
+        // Compare against expected output
+        let expected_value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&check_path)?)?;
+        let actual_json = serde_json::to_string_pretty(&result)?;
+        let expected_json = serde_json::to_string_pretty(&expected_value)?;
+
+        if result == expected_value {
+            eprintln!("✓ Output matches {}", check_path);
+            std::process::exit(0);
+        } else {
+            eprintln!("✗ Output differs from {}\n", check_path);
+            print_diff(&expected_json, &actual_json);
+            std::process::exit(1);
+        }
+    } else {
+        // Print output to stdout
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    }
 
     Ok(())
+}
+
+fn print_diff(expected: &str, actual: &str) {
+    let diff = TextDiff::from_lines(expected, actual);
+
+    for op in diff.ops().iter().take(50) {
+        for change in diff.iter_changes(op) {
+            let sign = match change.tag() {
+                ChangeTag::Delete => format!("{}-{}", RED, BOLD),
+                ChangeTag::Insert => format!("{}+{}", GREEN, BOLD),
+                ChangeTag::Equal => continue,
+            };
+            print!("{}{} {}", sign, RESET, change.value());
+        }
+    }
+
+    // Show truncation message if diff was too long
+    if diff.ops().len() > 50 {
+        eprintln!("... (diff truncated, showing first 50 changes)");
+    }
 }
 
 // Maximum sizes for security
