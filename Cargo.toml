@@ -7,16 +7,27 @@ authors = ["Qreta Dev <qretadev@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/qretaio/html2json"
 
+[[bin]]
+name = "html2json"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = []
+cli = ["dep:clap", "dep:reqwest", "dep:tokio", "dep:url"]
+
 [dependencies]
 anyhow = "1.0"
-clap = { version = "4.0", features = ["derive"] }
 regex = "1.0"
-reqwest = { version = "0.13", features = ["json"] }
 scraper = "0.25"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
-url = "2"
+
+# CLI-only dependencies
+clap = { version = "4.0", features = ["derive"], optional = true }
+reqwest = { version = "0.13", features = ["json"], optional = true }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"], optional = true }
+url = { version = "2", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
