@@ -1,7 +1,7 @@
 {
   "$": "channel",
   "title": "title",
-  "link": "link",
+  "link": "link | void",
   "description": "description",
   "language": "language",
   "lastBuildDate": "lastBuildDate",
@@ -9,7 +9,7 @@
     {
       "$": "item",
       "title": "title",
-      "link": "link",
+      "link": "link | void",
       "description": "description",
       "pubDate": "pubDate",
       "guid": "guid",

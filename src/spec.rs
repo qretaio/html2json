@@ -115,6 +115,7 @@ pub enum FieldSpec {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PipeCommand {
     Attr(String),
+    Void,
     Trim,
     Lower,
     Upper,
@@ -259,6 +260,7 @@ impl FieldSpec {
             "trim" | "text" => return Ok(PipeCommand::Trim),
             "lower" => return Ok(PipeCommand::Lower),
             "upper" => return Ok(PipeCommand::Upper),
+            "void" => return Ok(PipeCommand::Void),
             "parseAs:number" => return Ok(PipeCommand::ParseAsNumber),
             "parseAs:int" => return Ok(PipeCommand::ParseAsInt),
             "parseAs:float" => return Ok(PipeCommand::ParseAsFloat),

@@ -433,4 +433,37 @@ mod tests {
         assert_eq!(items[1]["user"], "user2");
         assert_eq!(items[1]["comments"], "50 comments");
     }
+
+    #[test]
+    fn void_pipe_for_rss_link_elements() {
+        // HTML parser treats <link> as void element, but RSS uses <link>text</link>
+        // The void pipe extracts the text from the next sibling
+        let html = r#"<channel><link>https://example.com</link></channel>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "$": "channel",
+                "url": "link | void"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["url"], "https://example.com");
+    }
+
+    #[test]
+    fn void_pipe_position_independence() {
+        // The void pipe should work regardless of its position in the pipe chain
+        let html = r#"<link>  HTTPS://EXAMPLE.COM  </link>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "with_void_first": "link | void | trim | lower",
+                "with_void_last": "link | trim | lower | void"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        // Both should extract void text and apply transforms
+        assert_eq!(result["with_void_first"], "https://example.com");
+        assert_eq!(result["with_void_last"], "https://example.com");
+    }
 }

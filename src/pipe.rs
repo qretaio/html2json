@@ -54,6 +54,7 @@ pub fn apply_pipe(value: Value, pipe: &PipeCommand) -> Result<Value, anyhow::Err
         PipeCommand::ParseAsInt => apply_parse_int(value),
         PipeCommand::Regex(pattern) => apply_regex(value, pattern),
         PipeCommand::Attr(_) => Ok(value),
+        PipeCommand::Void => Ok(value),
     }
 }
 
@@ -116,4 +117,33 @@ fn as_string(value: &Value) -> Result<&str, anyhow::Error> {
     value
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Expected string value"))
+}
+
+/// Separate source pipes from transform pipes
+///
+/// Returns (source_pipe, transform_pipes) where source_pipe is the first
+/// attr or void command found (or None for default text extraction).
+pub fn split_source_and_transforms(
+    pipes: &[PipeCommand],
+) -> (Option<&PipeCommand>, Vec<&PipeCommand>) {
+    let mut source_pipe = None;
+    let mut transforms = Vec::new();
+
+    for pipe in pipes {
+        match pipe {
+            PipeCommand::Attr(_) | PipeCommand::Void => {
+                // First source pipe wins, subsequent ones are treated as transforms
+                if source_pipe.is_none() {
+                    source_pipe = Some(pipe);
+                } else {
+                    transforms.push(pipe);
+                }
+            }
+            _ => {
+                transforms.push(pipe);
+            }
+        }
+    }
+
+    (source_pipe, transforms)
 }

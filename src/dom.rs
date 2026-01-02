@@ -52,13 +52,21 @@ impl Dom {
     pub fn select(&self, selector_str: &str) -> Result<Vec<Node>, anyhow::Error> {
         let selector = Selector::parse(selector_str)
             .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", selector_str, e))?;
-        Ok(self.html.select(&selector).map(node_from_element).collect())
+        Ok(self
+            .html
+            .select(&selector)
+            .map(|el| node_from_element(el, &self.html))
+            .collect())
     }
 
     pub fn select_one(&self, selector_str: &str) -> Result<Option<Node>, anyhow::Error> {
         let selector = Selector::parse(selector_str)
             .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {}", selector_str, e))?;
-        Ok(self.html.select(&selector).next().map(node_from_element))
+        Ok(self
+            .html
+            .select(&selector)
+            .next()
+            .map(|el| node_from_element(el, &self.html)))
     }
 
     pub fn select_relative(
@@ -84,7 +92,7 @@ impl Dom {
 
         Ok(base_el
             .select(&relative_selector)
-            .map(node_from_element)
+            .map(|el| node_from_element(el, &self.html))
             .collect())
     }
 
@@ -111,7 +119,7 @@ impl Dom {
             if let Some(sib_el) = ElementRef::wrap(sibling)
                 && sib_el.select(&selector).next().is_some()
             {
-                return Ok(Some(node_from_element(sib_el)));
+                return Ok(Some(node_from_element(sib_el, &self.html)));
             }
         }
 
@@ -123,7 +131,11 @@ impl Dom {
         &self,
         selector: Arc<Selector>,
     ) -> Result<Option<Node>, anyhow::Error> {
-        Ok(self.html.select(&selector).next().map(node_from_element))
+        Ok(self
+            .html
+            .select(&selector)
+            .next()
+            .map(|el| node_from_element(el, &self.html)))
     }
 
     /// Select relative using a pre-parsed `Arc<Selector>` - optimized path
@@ -133,7 +145,10 @@ impl Dom {
         selector: Arc<Selector>,
     ) -> Result<Option<Node>, anyhow::Error> {
         let base_el = self.find_element_by_html(base.html())?;
-        Ok(base_el.select(&selector).next().map(node_from_element))
+        Ok(base_el
+            .select(&selector)
+            .next()
+            .map(|el| node_from_element(el, &self.html)))
     }
 
     /// Find element by its HTML content
@@ -150,15 +165,70 @@ impl Dom {
     }
 }
 
-fn node_from_element(el: ElementRef) -> Node {
+fn node_from_element(el: ElementRef, tree: &Html) -> Node {
     let attrs: Vec<(String, String)> = el
         .value()
         .attrs()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
+
+    // Get text content normally
+    let text_content = el.text().collect::<String>();
+
+    // For void elements, check if next sibling is a text node (common in RSS/XML)
+    let text = if text_content.is_empty() && is_void_element(el.value().name()) {
+        // Look for text in next sibling (where RSS link text ends up)
+        // The text node becomes a sibling after the void element
+        let node_id = el.id();
+        tree.tree
+            .get(node_id)
+            .and_then(|node_ref| node_ref.parent())
+            .and_then(|parent| {
+                let parent_ref = tree.tree.get(parent.id())?;
+                let mut found_current = false;
+                for child_ref in parent_ref.children() {
+                    if found_current {
+                        // This is the next sibling - check if it's a text node
+                        if let Some(text) = child_ref.value().as_text() {
+                            return Some(text.trim().to_string());
+                        }
+                        break;
+                    }
+                    if child_ref.id() == node_id {
+                        found_current = true;
+                    }
+                }
+                None::<String>
+            })
+            .unwrap_or_else(|| text_content.clone())
+    } else {
+        text_content
+    };
+
     Node {
         html: el.html(),
-        text: el.text().collect(),
+        text,
         attributes: attrs,
     }
+}
+
+/// Check if element name is an HTML void element
+pub fn is_void_element(name: &str) -> bool {
+    matches!(
+        name,
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
 }

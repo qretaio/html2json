@@ -13,8 +13,8 @@
 //! - The `$` value as a selector refers to the scope element itself
 
 use crate::dom::{Dom, Node};
-use crate::pipe::apply_pipes;
-use crate::spec::{ArraySpec, FieldSpec, LiteralValue, ObjectSpec, SelectorRef, Spec};
+use crate::pipe::split_source_and_transforms;
+use crate::spec::{ArraySpec, FieldSpec, LiteralValue, ObjectSpec, PipeCommand, SelectorRef, Spec};
 use serde_json::Value;
 
 /// Special selector prefixes
@@ -102,8 +102,8 @@ impl Extractor {
     /// Extract a single field value
     ///
     /// Handles selectors, nested objects, nested arrays, and literals.
-    /// For attribute extraction, the first pipe must be `attr:name` which
-    /// operates on the element itself rather than its text content.
+    /// Pipe commands like `attr:name` and `void` specify the extraction source,
+    /// while other pipes (trim, lower, regex, etc.) transform the value.
     fn extract_field(
         &self,
         spec: &FieldSpec,
@@ -114,12 +114,8 @@ impl Extractor {
             FieldSpec::Nested(obj_spec) => self.extract_object(obj_spec, scope),
             FieldSpec::NestedArray(arr_spec) => self.extract_array(arr_spec, scope),
             FieldSpec::Selector(selector_ref, pipes) => {
-                let has_attr_pipe = pipes
-                    .iter()
-                    .any(|p| matches!(p, crate::spec::PipeCommand::Attr(_)));
-
                 let node = self.select_node(selector_ref, scope)?;
-                Self::apply_pipes_opt(node, pipes, has_attr_pipe)
+                Self::apply_pipes_to_node(node, pipes)
             }
         }
     }
@@ -167,27 +163,30 @@ impl Extractor {
     }
 
     /// Apply pipes to an optional node, returning Null if node is None
-    fn apply_pipes_opt(
-        node: Option<crate::dom::Node>,
-        pipes: &[crate::spec::PipeCommand],
-        has_attr_pipe: bool,
-    ) -> Result<Value, anyhow::Error> {
-        match node {
-            Some(n) => Self::apply_pipes_to_node(n, pipes, has_attr_pipe),
-            None => Ok(Value::Null),
-        }
-    }
-
     fn apply_pipes_to_node(
-        node: crate::dom::Node,
-        pipes: &[crate::spec::PipeCommand],
-        has_attr_pipe: bool,
+        node: Option<crate::dom::Node>,
+        pipes: &[PipeCommand],
     ) -> Result<Value, anyhow::Error> {
-        if has_attr_pipe {
-            apply_pipes_with_attr(node, pipes)
-        } else {
-            apply_pipes(node.text(), pipes)
-        }
+        let Some(n) = node else {
+            return Ok(Value::Null);
+        };
+
+        let (source_pipe, transform_pipes) = split_source_and_transforms(pipes);
+
+        // Extract initial value based on source
+        let initial_value = match source_pipe {
+            Some(PipeCommand::Attr(attr_name)) => extract_attr_value(&n, attr_name),
+            Some(PipeCommand::Void) => extract_void_text_value(&n),
+            None => Value::String(n.text().to_string()),
+            Some(_) => unreachable!("Non-source pipe in source_pipe position"),
+        };
+
+        // Apply transform pipes
+        transform_pipes
+            .into_iter()
+            .try_fold(initial_value, |value, pipe| {
+                crate::pipe::apply_pipe(value, pipe)
+            })
     }
 
     /// Extract an array of elements matching the scope selector
@@ -252,35 +251,84 @@ impl Extractor {
     }
 }
 
-/// Apply pipes starting with attribute extraction
-///
-/// The first pipe must be `attr:name` which extracts from the element.
-/// Subsequent pipes transform the attribute value.
-fn apply_pipes_with_attr(
-    node: crate::dom::Node,
-    pipes: &[crate::spec::PipeCommand],
-) -> Result<Value, anyhow::Error> {
-    // Find the attr pipe index and split the pipes
-    let attr_idx = pipes
-        .iter()
-        .position(|p| matches!(p, crate::spec::PipeCommand::Attr(_)))
-        .ok_or_else(|| anyhow::anyhow!("attr pipe required"))?;
-
-    let attr_name = match &pipes[attr_idx] {
-        crate::spec::PipeCommand::Attr(name) => name,
-        _ => unreachable!(),
-    };
-
-    // Extract attribute value
-    let mut result = node
-        .attr(attr_name)
+/// Extract attribute value from a node
+fn extract_attr_value(node: &crate::dom::Node, attr_name: &str) -> Value {
+    node.attr(attr_name)
         .map(|s| Value::String(s.to_string()))
-        .unwrap_or(Value::Null);
+        .unwrap_or(Value::Null)
+}
 
-    // Apply remaining pipes
-    for pipe in &pipes[attr_idx + 1..] {
-        result = crate::pipe::apply_pipe(result, pipe)?;
+/// Extract void element text from a node
+///
+/// For void elements (link, meta, img, etc.) in RSS/XML, the actual text
+/// content often appears as a sibling text node. This extracts that text.
+fn extract_void_text_value(node: &crate::dom::Node) -> Value {
+    let text_content = node.text();
+
+    if text_content.is_empty() && is_void_element_from_html(node.html()) {
+        // Try to get text from next sibling (RSS/XML pattern)
+        get_void_text_from_html(node.html())
+            .map(Value::String)
+            .unwrap_or(Value::String(text_content.to_string()))
+    } else {
+        // For non-void elements or void elements with text, return the text
+        Value::String(text_content.to_string())
+    }
+}
+
+/// Check if HTML represents a void element
+fn is_void_element_from_html(html: &str) -> bool {
+    if let Some(tag_end) = html.find('>') {
+        let tag = &html[1..tag_end.min(html.len())];
+        let tag_name = tag.split_whitespace().next().unwrap_or("");
+        is_void_element(tag_name)
+    } else {
+        false
+    }
+}
+
+/// Extract text content from sibling node's HTML representation
+fn get_void_text_from_html(html: &str) -> Option<String> {
+    // This is a simplified approach - we look for the text node that follows
+    // the void element in the original HTML. For full DOM tree access,
+    // we'd need to store more context in the Node.
+    // For now, we use a heuristic: find text between the void element's closing
+    // and the next opening tag.
+
+    // Find the closing of the void element
+    if let Some(close_pos) = html.find('>') {
+        let after_open = &html[close_pos + 1..];
+
+        // Look for text up to the next '<'
+        if let Some(next_tag) = after_open.find('<') {
+            let text = &after_open[..next_tag];
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
     }
 
-    Ok(result)
+    None
+}
+
+/// Check if element name is an HTML void element
+fn is_void_element(name: &str) -> bool {
+    matches!(
+        name,
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
 }
