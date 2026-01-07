@@ -15,7 +15,7 @@ check html spec expected:
 
 # Install the html2json binary
 install:
-	cargo install --path . --features cli
+	cargo install --path . --features cli --force
 
 # Publish the html2json library to crates.io
 publish:

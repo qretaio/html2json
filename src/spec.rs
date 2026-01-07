@@ -73,6 +73,8 @@ pub struct ArraySpec {
 pub enum FieldSpec {
     /// CSS selector with optional pipes
     Selector(SelectorRef, Vec<PipeCommand>),
+    /// Fallback selectors - tries each in order until one produces a result
+    FallbackSelector(Vec<(SelectorRef, Vec<PipeCommand>)>),
     /// Nested object
     Nested(ObjectSpec),
     /// Nested array
@@ -157,8 +159,7 @@ impl FieldSpec {
                 if let Some(literal) = Self::parse_literal_string(s) {
                     return Ok(FieldSpec::Literal(literal));
                 }
-                let (selector, pipes) = Self::parse_selector_string(s)?;
-                Ok(FieldSpec::Selector(SelectorRef(selector), pipes))
+                Self::parse_selector_or_fallback(s)
             }
             Value::Number(n) => {
                 let literal = LiteralValue::Number(n.as_f64().unwrap_or(0.0));
@@ -272,5 +273,34 @@ impl FieldSpec {
         };
 
         Ok(PipeCommand::Substr(start, end))
+    }
+
+    /// Parse a selector string, handling fallback selectors with ||
+    ///
+    /// - "selector" -> Selector
+    /// - "selector || fallback" -> FallbackSelector with two options
+    /// - "sel1 || sel2 || sel3" -> FallbackSelector with three options
+    fn parse_selector_or_fallback(s: &str) -> Result<Self, anyhow::Error> {
+        let trimmed = s.trim();
+
+        // Check for || operator (fallback)
+        if trimmed.contains("||") {
+            let parts: Vec<&str> = trimmed.split("||").map(|p| p.trim()).collect();
+            if parts.len() < 2 {
+                return Err(anyhow::anyhow!("Invalid fallback selector"));
+            }
+
+            let mut selectors = Vec::new();
+            for part in parts {
+                let (selector, pipes) = Self::parse_selector_string(part)?;
+                selectors.push((SelectorRef(selector), pipes));
+            }
+
+            return Ok(FieldSpec::FallbackSelector(selectors));
+        }
+
+        // Single selector
+        let (selector, pipes) = Self::parse_selector_string(trimmed)?;
+        Ok(FieldSpec::Selector(SelectorRef(selector), pipes))
     }
 }

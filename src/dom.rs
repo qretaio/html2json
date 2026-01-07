@@ -270,6 +270,9 @@ impl Dom {
                 let node = self.select_node(selector_ref, scope)?;
                 Self::apply_pipes_to_node(node, pipes)
             }
+            crate::spec::FieldSpec::FallbackSelector(selectors) => {
+                self.extract_fallback_selector(selectors, scope)
+            }
         }
     }
 
@@ -394,6 +397,28 @@ impl Dom {
         transform_pipes
             .into_iter()
             .try_fold(initial_value, apply_pipe)
+    }
+
+    /// Extract from fallback selectors - tries each in order until one produces a non-null result
+    fn extract_fallback_selector(
+        &self,
+        selectors: &[(crate::spec::SelectorRef, Vec<crate::spec::PipeCommand>)],
+        scope: Option<&Node>,
+    ) -> Result<serde_json::Value, anyhow::Error> {
+        for (selector_ref, pipes) in selectors {
+            let node = self.select_node(selector_ref, scope)?;
+            let result = Self::apply_pipes_to_node(node, pipes)?;
+
+            // Check if we got a meaningful result (not null, not empty string)
+            match &result {
+                serde_json::Value::Null => continue,
+                serde_json::Value::String(s) if s.trim().is_empty() => continue,
+                _ => return Ok(result),
+            }
+        }
+
+        // All selectors failed, return null
+        Ok(serde_json::Value::Null)
     }
 }
 

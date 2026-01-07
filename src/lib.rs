@@ -390,4 +390,137 @@ mod tests {
 
         similar_asserts::assert_serde_eq!(expected, result);
     }
+
+    #[test]
+    fn fallback_operator_first_selector_matches() {
+        let html = r#"<html><body><h1 class="main">First</h1><h1 class="fallback">Second</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1.main || h1.fallback"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "First");
+    }
+
+    #[test]
+    fn fallback_operator_second_selector_matches() {
+        let html = r#"<html><body><h1 class="fallback">Second</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1.main || h1.fallback"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Second");
+    }
+
+    #[test]
+    fn fallback_operator_all_selectors_fail_returns_null() {
+        let html = r#"<html><body><p>Some content</p></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1.main || h1.fallback || h1"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert!(result["title"].is_null());
+    }
+
+    #[test]
+    fn fallback_operator_with_pipes() {
+        let html = r#"<html><body><h1 class="main">First</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1.main || h1.fallback | upper"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "First");
+    }
+
+    #[test]
+    fn fallback_operator_with_pipes_on_fallback() {
+        let html = r#"<html><body><h1 class="fallback">Second</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1.main || h1.fallback | upper"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "SECOND");
+    }
+
+    #[test]
+    fn fallback_operator_multiple_options() {
+        let html = r#"<html><body><h1 class="third">Third</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1.first || h1.second || h1.third || h1.fourth"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Third");
+    }
+
+    #[test]
+    fn fallback_operator_empty_string_falls_back() {
+        let html = r#"<html><body><h1 class="main"></h1><h1 class="fallback">Actual Content</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1.main || h1.fallback"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Actual Content");
+    }
+
+    #[test]
+    fn fallback_operator_whitespace_only_falls_back() {
+        let html = r#"<html><body><h1 class="main">   </h1><h1 class="fallback">Actual Content</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1.main || h1.fallback"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Actual Content");
+    }
+
+    #[test]
+    fn fallback_operator_in_collection() {
+        let html = r#"
+            <html><body>
+                <div class="item">
+                    <h1 class="primary">First Item</h1>
+                    <h1 class="secondary">First Fallback</h1>
+                </div>
+                <div class="item">
+                    <h1 class="secondary">Second Item</h1>
+                </div>
+            </body></html>
+        "#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "items": [{
+                    "$": ".item",
+                    "title": "h1.primary || h1.secondary"
+                }]
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        let arr = result["items"].as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["title"], "First Item");
+        assert_eq!(arr[1]["title"], "Second Item");
+    }
 }
