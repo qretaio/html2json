@@ -55,7 +55,17 @@ impl<'de> Deserialize<'de> for Spec {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectSpec {
     pub scope_selector: Option<SelectorRef>,
-    pub fields: HashMap<String, FieldSpec>,
+    pub fields: HashMap<String, Field>,
+}
+
+/// A field specification with optional flag
+///
+/// Fields marked as optional (with `?` suffix) will be removed from output
+/// if their value is null.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Field {
+    pub spec: FieldSpec,
+    pub optional: bool,
 }
 
 /// Array spec - extract all matching elements
@@ -141,7 +151,20 @@ impl Spec {
                     scope_selector = Some(SelectorRef(s.to_string()));
                 }
             } else {
-                fields.insert(key.clone(), FieldSpec::from_json(val)?);
+                // Check if field is optional (ends with ?)
+                let (field_name, optional) = if key.ends_with('?') {
+                    (&key[..key.len() - 1], true)
+                } else {
+                    (key.as_str(), false)
+                };
+
+                fields.insert(
+                    field_name.to_string(),
+                    Field {
+                        spec: FieldSpec::from_json(val)?,
+                        optional,
+                    },
+                );
             }
         }
 

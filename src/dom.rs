@@ -178,30 +178,111 @@ impl Dom {
         let result = spec
             .fields
             .iter()
-            .map(|(key, field_spec): (&String, &crate::spec::FieldSpec)| {
-                self.extract_field(field_spec, scope.as_ref())
-                    .map(|value| (key.clone(), value))
+            .map(|(key, field): (&String, &crate::spec::Field)| {
+                self.extract_field(&field.spec, scope.as_ref())
+                    .map(|value| (key.clone(), value, field.optional))
             })
-            .collect::<Result<serde_json::Map<_, _>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(serde_json::Value::Object(result))
+        // Filter out null optional fields and recursively clean nested objects
+        let cleaned = Self::filter_optional_fields(result);
+
+        Ok(serde_json::Value::Object(cleaned))
     }
 
     /// Extract an object from fields (helper to avoid cloning)
     fn extract_object_from_fields(
         &self,
-        fields: &HashMap<String, crate::spec::FieldSpec>,
+        fields: &HashMap<String, crate::spec::Field>,
         scope: Option<&Node>,
     ) -> Result<serde_json::Value, anyhow::Error> {
         let result = fields
             .iter()
-            .map(|(key, field_spec): (&String, &crate::spec::FieldSpec)| {
-                self.extract_field(field_spec, scope)
-                    .map(|value| (key.clone(), value))
+            .map(|(key, field): (&String, &crate::spec::Field)| {
+                self.extract_field(&field.spec, scope)
+                    .map(|value| (key.clone(), value, field.optional))
             })
-            .collect::<Result<serde_json::Map<_, _>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(serde_json::Value::Object(result))
+        // Filter out null optional fields and recursively clean nested objects
+        let cleaned = Self::filter_optional_fields(result);
+        Ok(serde_json::Value::Object(cleaned))
+    }
+
+    /// Filter out null optional fields and recursively clean nested objects
+    ///
+    /// Returns a map with null optional fields removed.
+    /// Nested objects with all null fields are also removed.
+    fn filter_optional_fields(
+        fields: Vec<(String, serde_json::Value, bool)>,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        let mut result = serde_json::Map::new();
+
+        for (key, value, optional) in fields {
+            match value {
+                // Null values: include only if not optional
+                serde_json::Value::Null if optional => continue,
+                serde_json::Value::Null => {
+                    result.insert(key, value);
+                }
+                // Objects: recursively clean and insert if non-empty
+                serde_json::Value::Object(_) => {
+                    let cleaned = Self::recursively_clean_object(value);
+                    if !cleaned.is_null() {
+                        result.insert(key, cleaned);
+                    }
+                }
+                // Arrays: recursively clean each item
+                serde_json::Value::Array(arr) => {
+                    let cleaned: Vec<_> = arr
+                        .into_iter()
+                        .map(Self::recursively_clean_object)
+                        .collect();
+                    // Only insert if array has items or is not optional
+                    if !cleaned.is_empty() || !optional {
+                        result.insert(key, serde_json::Value::Array(cleaned));
+                    }
+                }
+                // All other values: always include
+                _ => {
+                    result.insert(key, value);
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Recursively clean an object by removing null values
+    ///
+    /// Returns null if the object becomes empty after cleaning.
+    fn recursively_clean_object(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(obj) => {
+                let mut cleaned = serde_json::Map::new();
+                for (k, v) in obj {
+                    let cleaned_v = Self::recursively_clean_object(v);
+                    // Keep non-null values
+                    if !cleaned_v.is_null() {
+                        cleaned.insert(k, cleaned_v);
+                    }
+                }
+                if cleaned.is_empty() {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::Value::Object(cleaned)
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                let cleaned: Vec<_> = arr
+                    .into_iter()
+                    .map(|v| Self::recursively_clean_object(v))
+                    .filter(|v| !v.is_null())
+                    .collect();
+                serde_json::Value::Array(cleaned)
+            }
+            v => v,
+        }
     }
 
     /// Extract an array from the DOM

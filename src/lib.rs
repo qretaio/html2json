@@ -523,4 +523,150 @@ mod tests {
         assert_eq!(arr[0]["title"], "First Item");
         assert_eq!(arr[1]["title"], "Second Item");
     }
+
+    #[test]
+    fn optional_field_removed_when_null() {
+        let html = r#"<html><body><h1>Title</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1",
+                "missing?": ".nonexistent",
+                "description": "p"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Title");
+        assert!(result.get("missing").is_none(), "Optional null field should be removed");
+        assert!(result.get("description").is_some(), "Non-optional null field should be present as null");
+        assert!(result["description"].is_null(), "Non-optional null field should be present as null");
+    }
+
+    #[test]
+    fn optional_field_kept_when_has_value() {
+        let html = r#"<html><body><h1>Title</h1><p class="desc">Description</p></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1",
+                "description?": "p.desc"
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Title");
+        assert_eq!(result["description"], "Description");
+    }
+
+    #[test]
+    fn optional_nested_object_removed_when_all_null() {
+        let html = r#"<html><body><h1>Title</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1",
+                "metadata?": {
+                    "author": ".author",
+                    "date": ".date"
+                }
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Title");
+        assert!(result.get("metadata").is_none(), "Optional object with all null fields should be removed");
+    }
+
+    #[test]
+    fn optional_nested_object_kept_when_has_value() {
+        let html = r#"<html><body><h1>Title</h1><span class="author">John</span></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1",
+                "metadata?": {
+                    "author": ".author",
+                    "date": ".date"
+                }
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Title");
+        assert_eq!(result["metadata"]["author"], "John");
+        assert!(result["metadata"].get("date").is_none(), "Nested null fields should be removed");
+    }
+
+    #[test]
+    fn non_optional_nested_object_kept_with_nulls() {
+        let html = r#"<html><body><h1>Title</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1",
+                "metadata": {
+                    "author": ".author",
+                    "date": ".date"
+                }
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Title");
+        assert!(result["metadata"].get("author").is_none(), "Nested null fields should be removed recursively");
+        assert!(result["metadata"].get("date").is_none(), "Nested null fields should be removed recursively");
+    }
+
+    #[test]
+    fn optional_array_removed_when_empty() {
+        let html = r#"<html><body><h1>Title</h1></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1",
+                "items?": [{
+                    "$": ".item",
+                    "value": "$"
+                }]
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Title");
+        assert!(result.get("items").is_none(), "Optional empty array should be removed");
+    }
+
+    #[test]
+    fn optional_array_kept_when_has_items() {
+        let html = r#"<html><body><h1>Title</h1><div class="item">Item 1</div></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "title": "h1",
+                "items?": [{
+                    "$": ".item",
+                    "value": "$"
+                }]
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        assert_eq!(result["title"], "Title");
+        assert_eq!(result["items"].as_array().unwrap().len(), 1);
+        assert_eq!(result["items"][0]["value"], "Item 1");
+    }
+
+    #[test]
+    fn recursive_null_filtering_in_nested_objects() {
+        let html = r#"<html><body></body></html>"#;
+        let spec: Spec = serde_json::from_str(
+            r##"{
+                "data?": {
+                    "level1": {
+                        "level2": {
+                            "value": ".missing"
+                        }
+                    }
+                }
+            }"##,
+        )
+        .unwrap();
+        let result = extract(html, &spec).unwrap();
+        // All nested objects should be removed since they're all null
+        assert!(result.get("data").is_none(), "Optional nested object should be removed when all nested values are null");
+    }
 }
