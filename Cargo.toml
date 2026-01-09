@@ -1,6 +1,6 @@
 [package]
 name = "html2json"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "HTML to JSON extractor"
 authors = ["Qreta Dev <qretadev@gmail.com>"]
@@ -18,7 +18,7 @@ harness = false
 
 [features]
 default = []
-cli = ["dep:clap", "dep:reqwest", "dep:tokio", "dep:url", "dep:similar"]
+cli = ["dep:clap", "dep:similar"]
 
 [dependencies]
 anyhow = "1.0"
@@ -29,13 +29,9 @@ serde_json = "1.0"
 
 # CLI-only dependencies
 clap = { version = "4.0", features = ["derive"], optional = true }
-reqwest = { version = "0.13", features = ["json"], optional = true }
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread"], optional = true }
-url = { version = "2", optional = true }
 similar = { version = "2.7", features = ["bytes"], optional = true }
 ego-tree = "0.10.0"
 
 [dev-dependencies]
 criterion = "0.8.1"
 similar-asserts = { version = "1.7", features = ["serde"] }
-tokio-test = "0.4"

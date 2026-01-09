@@ -276,7 +276,7 @@ impl Dom {
             serde_json::Value::Array(arr) => {
                 let cleaned: Vec<_> = arr
                     .into_iter()
-                    .map(|v| Self::recursively_clean_object(v))
+                    .map(Self::recursively_clean_object)
                     .filter(|v| !v.is_null())
                     .collect();
                 serde_json::Value::Array(cleaned)

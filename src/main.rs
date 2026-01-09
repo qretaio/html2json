@@ -2,8 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use html2json::Spec;
 use similar::{ChangeTag, TextDiff};
-use std::sync::OnceLock;
-use url::Url;
+use std::io::Read;
 
 // ANSI color codes
 const RED: &str = "\x1b[31m";
@@ -15,12 +14,14 @@ const BOLD: &str = "\x1b[1m";
 #[derive(Parser, Debug)]
 #[command(name = "html2json")]
 #[command(author = "html2json")]
-#[command(version = "0.1.0")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 struct Args {
-    /// Input: URL starting with http:// or https://, or path to HTML file
-    input: String,
+    /// Input: path to HTML file (reads from stdin if not provided)
+    #[arg(value_name = "FILE")]
+    input: Option<String>,
 
     /// Path to JSON extractor spec file
+    #[arg(short, long, value_name = "SPEC")]
     spec: String,
 
     /// Check output matches expected JSON file (shows diff if different)
@@ -28,11 +29,10 @@ struct Args {
     check: Option<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let args = Args::parse();
 
-    let html = fetch_html(&args.input).await?;
+    let html = read_html(args.input.as_deref())?;
     let spec_value = load_spec(&args.spec)?;
     let spec = Spec::from_json(&spec_value)?;
     let dom = html2json::Dom::parse(&html)?;
@@ -84,65 +84,23 @@ fn print_diff(expected: &str, actual: &str) {
 // Maximum sizes for security
 const MAX_HTML_SIZE: usize = 100_000_000; // 100MB
 const MAX_SPEC_SIZE: usize = 1_048_576; // 1MB
-const HTTP_TIMEOUT_SECONDS: u64 = 30;
 
-// Singleton HTTP client for connection pooling
-static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
-fn get_http_client() -> &'static reqwest::Client {
-    HTTP_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECONDS))
-            .connect_timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECONDS))
-            .pool_max_idle_per_host(10)
-            .build()
-            .unwrap_or_else(|e| panic!("Failed to build HTTP client: {}", e))
-    })
-}
-
-/// Fetch HTML from a URL or read from a file path
-pub async fn fetch_html(input: &str) -> Result<String> {
-    match url::Url::parse(input) {
-        Ok(url) => fetch_from_url(&url).await,
-        _ => read_from_file(input),
-    }
-}
-
-/// Fetch HTML from a URL
-async fn fetch_from_url(url: &Url) -> Result<String> {
-    // Validate URL scheme before fetching
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err(anyhow::anyhow!(
-            "Unsupported URL scheme '{}': only http and https are allowed",
-            url.scheme()
-        ));
-    }
-
-    let response = get_http_client().get(url.clone()).send().await?;
-    if !response.status().is_success() {
-        return Err(anyhow::anyhow!(
-            "HTTP error {}: failed to fetch {}",
-            response.status(),
-            url
-        ));
-    }
-
-    let html = response.text().await?;
-    if html.len() > MAX_HTML_SIZE {
-        return Err(anyhow::anyhow!(
-            "HTML input exceeds maximum size of {} bytes",
-            MAX_HTML_SIZE
-        ));
-    }
-
-    Ok(html)
-}
-
-/// Read HTML from a file path
-fn read_from_file(path: &str) -> Result<String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", path, e))?;
+/// Read HTML from a file path or stdin
+fn read_html(path: Option<&str>) -> Result<String> {
+    let content = match path {
+        Some(file_path) => {
+            std::fs::read_to_string(file_path)
+                .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", file_path, e))?
+        }
+        None => {
+            // Read from stdin
+            let mut buffer = String::new();
+            std::io::stdin()
+                .read_to_string(&mut buffer)
+                .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
+            buffer
+        }
+    };
 
     if content.len() > MAX_HTML_SIZE {
         return Err(anyhow::anyhow!(
@@ -155,7 +113,7 @@ fn read_from_file(path: &str) -> Result<String> {
 }
 
 /// Load spec from a JSON file
-pub fn load_spec(path: &str) -> Result<serde_json::Value> {
+fn load_spec(path: &str) -> Result<serde_json::Value> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("Failed to read spec file '{}': {}", path, e))?;
 

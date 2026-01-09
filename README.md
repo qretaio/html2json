@@ -7,7 +7,7 @@ A Rust port of
 
 ## Overview
 
-- **Input:** HTML source (URL or file path) + Extractor spec (JSON file)
+- **Input:** HTML source (file path or stdin) + Extractor spec (JSON file)
 - **Output:** JSON matching the structure defined in the spec
 
 ## Installation
@@ -35,18 +35,22 @@ just install
 ## Examples
 
 ```bash
-# Extract from URL
-html2json "https://news.ycombinator.com/" examples/hn.json
-
 # Extract from file
-html2json examples/hn.html examples/hn.json
+html2json examples/hn.html --spec examples/hn.json
+
+# Extract from stdin (pipe from curl)
+curl -s https://news.ycombinator.com/ | html2json --spec examples/hn.json
+
+# Extract from stdin (pipe from cat)
+cat examples/hn.html | html2json --spec examples/hn.json
 
 # Check output matches expected JSON (useful for testing/CI)
-html2json examples/hn.html examples/hn.json --check expected.json
+html2json examples/hn.html --spec examples/hn.json --check expected.json
 ```
 
 ### Options
 
+- `--spec, -s <FILE>` - Path to JSON extractor spec file (required)
 - `--check, -c <FILE>` - Compare output against expected JSON file. Exits with 0 if match, 1 if differ (with colored diff).
 
 ## LICENSE
