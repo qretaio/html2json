@@ -7,6 +7,10 @@ authors = ["Qreta Dev <qretadev@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/qretaio/html2json"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+bin-dir = "{ bin }{ binary-ext }"
+
 [[bin]]
 name = "html2json"
 path = "src/main.rs"
