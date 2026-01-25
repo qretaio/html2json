@@ -16,7 +16,7 @@ A Rust port of
 ### npm / WebAssembly
 
 ```bash
-npm install html2json-wasm
+npm install @qretaio/html2json
 ```
 
 ### From crates.io (Rust)
@@ -44,7 +44,7 @@ just install
 ### JavaScript / TypeScript
 
 ```javascript
-import { extract } from 'html2json-wasm';
+import { extract } from '@qretaio/html2json';
 
 const html = `
   <article class="post">
