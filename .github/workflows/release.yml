@@ -172,3 +172,6 @@ jobs:
       - name: Publish to npm
         working-directory: artifacts/html2json
         run: npm publish --access public
+
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
