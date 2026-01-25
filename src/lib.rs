@@ -537,9 +537,18 @@ mod tests {
         .unwrap();
         let result = extract(html, &spec).unwrap();
         assert_eq!(result["title"], "Title");
-        assert!(result.get("missing").is_none(), "Optional null field should be removed");
-        assert!(result.get("description").is_some(), "Non-optional null field should be present as null");
-        assert!(result["description"].is_null(), "Non-optional null field should be present as null");
+        assert!(
+            result.get("missing").is_none(),
+            "Optional null field should be removed"
+        );
+        assert!(
+            result.get("description").is_some(),
+            "Non-optional null field should be present as null"
+        );
+        assert!(
+            result["description"].is_null(),
+            "Non-optional null field should be present as null"
+        );
     }
 
     #[test]
@@ -572,7 +581,10 @@ mod tests {
         .unwrap();
         let result = extract(html, &spec).unwrap();
         assert_eq!(result["title"], "Title");
-        assert!(result.get("metadata").is_none(), "Optional object with all null fields should be removed");
+        assert!(
+            result.get("metadata").is_none(),
+            "Optional object with all null fields should be removed"
+        );
     }
 
     #[test]
@@ -591,7 +603,10 @@ mod tests {
         let result = extract(html, &spec).unwrap();
         assert_eq!(result["title"], "Title");
         assert_eq!(result["metadata"]["author"], "John");
-        assert!(result["metadata"].get("date").is_none(), "Nested null fields should be removed");
+        assert!(
+            result["metadata"].get("date").is_none(),
+            "Nested null fields should be removed"
+        );
     }
 
     #[test]
@@ -609,8 +624,14 @@ mod tests {
         .unwrap();
         let result = extract(html, &spec).unwrap();
         assert_eq!(result["title"], "Title");
-        assert!(result["metadata"].get("author").is_none(), "Nested null fields should be removed recursively");
-        assert!(result["metadata"].get("date").is_none(), "Nested null fields should be removed recursively");
+        assert!(
+            result["metadata"].get("author").is_none(),
+            "Nested null fields should be removed recursively"
+        );
+        assert!(
+            result["metadata"].get("date").is_none(),
+            "Nested null fields should be removed recursively"
+        );
     }
 
     #[test]
@@ -628,7 +649,10 @@ mod tests {
         .unwrap();
         let result = extract(html, &spec).unwrap();
         assert_eq!(result["title"], "Title");
-        assert!(result.get("items").is_none(), "Optional empty array should be removed");
+        assert!(
+            result.get("items").is_none(),
+            "Optional empty array should be removed"
+        );
     }
 
     #[test]
@@ -667,7 +691,10 @@ mod tests {
         .unwrap();
         let result = extract(html, &spec).unwrap();
         // All nested objects should be removed since they're all null
-        assert!(result.get("data").is_none(), "Optional nested object should be removed when all nested values are null");
+        assert!(
+            result.get("data").is_none(),
+            "Optional nested object should be removed when all nested values are null"
+        );
     }
 }
 
