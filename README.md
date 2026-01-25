@@ -7,12 +7,19 @@ A Rust port of
 
 ## Overview
 
-- **Input:** HTML source (file path or stdin) + Extractor spec (JSON file)
+- **Input:** HTML source + Extractor spec (JSON)
 - **Output:** JSON matching the structure defined in the spec
+- **Available as:** Rust crate, CLI tool, and WebAssembly npm package
 
 ## Installation
 
-### From crates.io
+### npm / WebAssembly
+
+```bash
+npm install html2json-wasm
+```
+
+### From crates.io (Rust)
 
 ```bash
 cargo install html2json --features cli
@@ -32,7 +39,43 @@ cargo install --git https://github.com/qretaio/html2json --features cli
 just install
 ```
 
-## Examples
+## Usage
+
+### JavaScript / TypeScript
+
+```javascript
+import { extract } from 'html2json-wasm';
+
+const html = `
+  <article class="post">
+    <h2>My Article</h2>
+    <p class="author">John Doe</p>
+    <div class="tags">
+      <span>rust</span>
+      <span>wasm</span>
+    </div>
+  </article>
+`;
+
+const spec = JSON.stringify({
+  title: "h2",
+  author: ".author",
+  tags: [{
+    "$": ".tags span",
+    "name": "$"
+  }]
+});
+
+const result = extract(html, spec);
+console.log(result);
+// {
+//   "title": "My Article",
+//   "author": "John Doe",
+//   "tags": [{"name": "rust"}, {"name": "wasm"}]
+// }
+```
+
+### CLI
 
 ```bash
 # Extract from file
@@ -48,10 +91,94 @@ cat examples/hn.html | html2json --spec examples/hn.json
 html2json examples/hn.html --spec examples/hn.json --check expected.json
 ```
 
-### Options
+### CLI Options
 
 - `--spec, -s <FILE>` - Path to JSON extractor spec file (required)
 - `--check, -c <FILE>` - Compare output against expected JSON file. Exits with 0 if match, 1 if differ (with colored diff).
+
+## Spec Format
+
+The spec is a JSON object where each key defines an output field and each value defines a CSS selector to extract that field.
+
+### Basic Selectors
+
+```json
+{
+  "title": "h1",
+  "description": "p.description"
+}
+```
+
+### Attributes
+
+```json
+{
+  "link": "a.main | attr:href",
+  "image": "img.hero | attr:src"
+}
+```
+
+### Pipes (Transformations)
+
+```json
+{
+  "title": "h1 | trim",
+  "slug": "h1 | lower | regex:\\s+-",
+  "price": ".price | regex:\\$(\\d+\\.\\d+) | parseAs:int"
+}
+```
+
+Available pipes:
+- `trim` - Trim whitespace
+- `lower` - Convert to lowercase
+- `upper` - Convert to uppercase
+- `substr:start:end` - Extract substring
+- `regex:pattern` - Regex capture (first group)
+- `parseAs:int` - Parse as integer
+- `parseAs:float` - Parse as float
+- `attr:name` - Get attribute value
+- `void` - Extract from void elements, useful for extracting xml
+
+### Collections (Arrays)
+
+```json
+{
+  "items": [{
+    "$": ".item",
+    "title": "h2",
+    "description": "p"
+  }]
+}
+```
+
+### Scoping (`$` selector)
+
+```json
+{
+  "$": "article",
+  "title": "h1",
+  "paragraphs": ["p"]
+}
+```
+
+### Fallback Operators (`||`)
+
+```json
+{
+  "title": "h1.main || h1.fallback || h1"
+}
+```
+
+### Optional Fields (`?`)
+
+```json
+{
+  "title": "h1",
+  "description?": "p.description"
+}
+```
+
+Optional fields that return `null` are removed from the output.
 
 ## LICENSE
 

@@ -1,0 +1,49 @@
+{
+  "name": "html2json-wasm",
+  "version": "0.5.0",
+  "description": "HTML to JSON extractor using WebAssembly - Fast, powerful HTML parsing with CSS selectors",
+  "keywords": [
+    "html",
+    "json",
+    "parser",
+    "scraper",
+    "web-scraping",
+    "css-selector",
+    "html-parser",
+    "wasm",
+    "webassembly",
+    "extraction",
+    "cheerio"
+  ],
+  "license": "MIT",
+  "author": "Qreta Dev <qretadev@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qretaio/html2json.git"
+  },
+  "homepage": "https://github.com/qretaio/html2json#readme",
+  "bugs": {
+    "url": "https://github.com/qretaio/html2json/issues"
+  },
+  "main": "pkg/html2json.js",
+  "browser": "pkg/html2json.js",
+  "types": "pkg/html2json.d.ts",
+  "files": [
+    "pkg/*",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "wasm-pack build --dev --target web --out-name html2json .",
+    "build:release": "wasm-pack build --release --target web --out-name html2json .",
+    "build:node": "wasm-pack build --dev --target nodejs --out-name html2json .",
+    "build:node:release": "wasm-pack build --release --target nodejs --out-name html2json .",
+    "test": "cargo test",
+    "prepublishOnly": "npm run build:release"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "devDependencies": {
+    "wasm-pack": "^0.13.0"
+  }
+}
