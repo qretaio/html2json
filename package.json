@@ -1,6 +1,6 @@
 {
   "name": "@qretaio/html2json",
-  "version": "0.5.0",
+  "version": "0.5.3",
   "description": "HTML to JSON extractor using WebAssembly - Fast, powerful HTML parsing with CSS selectors",
   "keywords": [
     "html",
