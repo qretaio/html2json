@@ -12,7 +12,7 @@ const BOLD: &str = "\x1b[1m";
 
 /// html2json - Extract JSON from HTML using CSS selectors
 #[derive(Parser, Debug)]
-#[command(name = "html2json")]
+#[command(name = env!("CARGO_PKG_VERSION"))]
 #[command(author = "html2json")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 struct Args {

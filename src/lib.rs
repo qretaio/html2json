@@ -670,3 +670,49 @@ mod tests {
         assert!(result.get("data").is_none(), "Optional nested object should be removed when all nested values are null");
     }
 }
+
+// WASM bindings for JavaScript/TypeScript usage
+#[cfg(feature = "wasm")]
+pub mod wasm {
+    use wasm_bindgen::prelude::*;
+
+    /// Extract JSON from HTML using a spec
+    ///
+    /// # Arguments
+    ///
+    /// * `html` - The HTML source to parse
+    /// * `spec_json` - The extraction specification as JSON string
+    ///
+    /// # Returns
+    ///
+    /// A JSON string with the extracted data
+    ///
+    /// # Errors
+    ///
+    /// Returns a JsValue error if the HTML parsing or extraction fails
+    ///
+    /// # Example
+    ///
+    /// ```javascript
+    /// import { extract } from 'html2json';
+    ///
+    /// const html = '<div class="item"><span>Price: $25.00</span></div>';
+    /// const spec = '{"price": ".item span | regex:\\\\$(\\\\d+\\\\.\\\\d+)"}';
+    /// const result = extract(html, spec);
+    /// console.log(result); // {"price":"25.00"}
+    /// ```
+    #[wasm_bindgen(js_name = extract)]
+    pub fn extract(html: &str, spec_json: &str) -> Result<String, JsValue> {
+        use crate::extract;
+        use crate::spec::Spec;
+
+        let spec: Spec = serde_json::from_str(spec_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid spec JSON: {}", e)))?;
+
+        let result = extract(html, &spec)
+            .map_err(|e| JsValue::from_str(&format!("Extraction failed: {}", e)))?;
+
+        serde_json::to_string_pretty(&result)
+            .map_err(|e| JsValue::from_str(&format!("JSON serialization failed: {}", e)))
+    }
+}
