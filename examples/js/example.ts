@@ -1,6 +1,6 @@
-// TypeScript Example: Using html2json-wasm with full type safety
+// TypeScript Example: Using @qretaio/html2json with full type safety
 
-import { extract } from 'html2json-wasm';
+import { extract } from "@qretaio/html2json";
 
 // Define your result types for type safety
 interface Tag {
@@ -40,25 +40,29 @@ const html: string = `
 `;
 
 // Define the extraction spec with TypeScript
-const spec = JSON.stringify({
+const spec = {
   pageTitle: "title",
-  articles: [{
-    "$": ".post",
-    title: "h2",
-    author: ".author",
-    "date?": ".date",  // Optional - won't be in result if missing
-    url: "a | attr:href",
-    tags: [{
-      "$": ".tags span",
-      name: "$"
-    }]
-  }]
-});
+  articles: [
+    {
+      $: ".post",
+      title: "h2",
+      author: ".author",
+      "date?": ".date", // Optional - won't be in result if missing
+      url: "a | attr:href",
+      tags: [
+        {
+          $: ".tags span",
+          name: "$",
+        },
+      ],
+    },
+  ],
+};
 
 // Extract and type the result
 try {
-  const resultJson: string = extract(html, spec);
-  const result: ExtractedData = JSON.parse(resultJson) as ExtractedData;
+  const resultJson: string = await extract(html, spec);
+  const result: ExtractedData = resultJson as unknown as ExtractedData;
 
   console.log(`Page: ${result.pageTitle}`);
   console.log(`Found ${result.articles.length} article(s)`);
@@ -68,9 +72,8 @@ try {
     if (article.date) {
       console.log(`  Published: ${article.date}`);
     }
-    console.log(`  Tags: ${article.tags.map(t => t.name).join(', ')}`);
+    console.log(`  Tags: ${article.tags.map((t) => t.name).join(", ")}`);
   });
-
 } catch (error) {
-  console.error('Extraction error:', error);
+  console.error("Extraction error:", error);
 }

@@ -1,27 +1,29 @@
 [package]
 name = "html2json"
-version = "0.5.0"
+version = "0.5.6"
 edition = "2024"
 description = "HTML to JSON extractor"
 authors = ["Qreta Dev <qretadev@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/qretaio/html2json"
 
-[lib]
-crate-type = ["cdylib", "rlib"]
-
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
 bin-dir = "{ bin }{ binary-ext }"
+
+[package.metadata.wasm-pack.profile.release.wasm-bindgen]
+debug-js-glue = false
+demangle-name-section = true
+dwarf-debug-info = false
+omit-default-module-path = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "html2json"
 path = "src/main.rs"
 required-features = ["cli"]
-
-[[bench]]
-name = "dom_bench"
-harness = false
 
 [features]
 default = []
@@ -30,20 +32,24 @@ wasm = ["dep:wasm-bindgen", "dep:js-sys"]
 
 [dependencies]
 anyhow = "1.0"
+
+# CLI-only dependencies
+clap = { version = "4.0", features = ["derive"], optional = true }
+ego-tree = "0.10.0"
+js-sys = { version = "0.3", optional = true }
 regex = "1.0"
 scraper = "0.25"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# CLI-only dependencies
-clap = { version = "4.0", features = ["derive"], optional = true }
 similar = { version = "2.7", features = ["bytes"], optional = true }
-ego-tree = "0.10.0"
 
 # WASM-only dependencies
 wasm-bindgen = { version = "0.2", optional = true }
-js-sys = { version = "0.3", optional = true }
 
 [dev-dependencies]
 criterion = "0.8.1"
 similar-asserts = { version = "1.7", features = ["serde"] }
+
+[[bench]]
+name = "dom_bench"
+harness = false

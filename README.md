@@ -16,7 +16,7 @@ A Rust port of
 ### npm / WebAssembly
 
 ```bash
-npm install html2json-wasm
+npm install @qretaio/html2json
 ```
 
 ### From crates.io (Rust)
@@ -44,7 +44,7 @@ just install
 ### JavaScript / TypeScript
 
 ```javascript
-import { extract } from 'html2json-wasm';
+import { extract } from "@qretaio/html2json";
 
 const html = `
   <article class="post">
@@ -57,16 +57,18 @@ const html = `
   </article>
 `;
 
-const spec = JSON.stringify({
+const spec = {
   title: "h2",
   author: ".author",
-  tags: [{
-    "$": ".tags span",
-    "name": "$"
-  }]
-});
+  tags: [
+    {
+      $: ".tags span",
+      name: "$",
+    },
+  ],
+};
 
-const result = extract(html, spec);
+const result = await extract(html, spec);
 console.log(result);
 // {
 //   "title": "My Article",
@@ -129,6 +131,7 @@ The spec is a JSON object where each key defines an output field and each value 
 ```
 
 Available pipes:
+
 - `trim` - Trim whitespace
 - `lower` - Convert to lowercase
 - `upper` - Convert to uppercase
@@ -143,11 +146,13 @@ Available pipes:
 
 ```json
 {
-  "items": [{
-    "$": ".item",
-    "title": "h2",
-    "description": "p"
-  }]
+  "items": [
+    {
+      "$": ".item",
+      "title": "h2",
+      "description": "p"
+    }
+  ]
 }
 ```
 
