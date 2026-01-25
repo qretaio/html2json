@@ -1,6 +1,6 @@
 [package]
 name = "html2json"
-version = "0.5.7"
+version = "0.5.10"
 edition = "2024"
 description = "HTML to JSON extractor"
 authors = ["Qreta Dev <qretadev@gmail.com>"]
