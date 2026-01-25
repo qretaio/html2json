@@ -88,10 +88,8 @@ const MAX_SPEC_SIZE: usize = 1_048_576; // 1MB
 /// Read HTML from a file path or stdin
 fn read_html(path: Option<&str>) -> Result<String> {
     let content = match path {
-        Some(file_path) => {
-            std::fs::read_to_string(file_path)
-                .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", file_path, e))?
-        }
+        Some(file_path) => std::fs::read_to_string(file_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read file '{file_path}': {e}"))?,
         None => {
             // Read from stdin
             let mut buffer = String::new();

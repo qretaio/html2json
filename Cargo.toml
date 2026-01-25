@@ -1,6 +1,6 @@
 [package]
 name = "html2json"
-version = "0.5.0"
+version = "0.5.5"
 edition = "2024"
 description = "HTML to JSON extractor"
 authors = ["Qreta Dev <qretadev@gmail.com>"]
@@ -47,3 +47,9 @@ js-sys = { version = "0.3", optional = true }
 [dev-dependencies]
 criterion = "0.8.1"
 similar-asserts = { version = "1.7", features = ["serde"] }
+
+[package.metadata.wasm-pack.profile.release.wasm-bindgen]
+debug-js-glue = false
+demangle-name-section = true
+dwarf-debug-info = false
+omit-default-module-path = false

@@ -1,6 +1,6 @@
-// Example: Using html2json-wasm in a browser or Node.js environment
+// Example: Using @qretaio/html2json in a browser or Node.js environment
 
-import { extract } from 'html2json-wasm';
+import { extract } from '@qretaio/html2json';
 
 // Sample HTML - in a real scenario, this might come from fetch() or a file
 const html = `

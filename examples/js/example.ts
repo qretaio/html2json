@@ -1,6 +1,6 @@
-// TypeScript Example: Using html2json-wasm with full type safety
+// TypeScript Example: Using @qretaio/html2json with full type safety
 
-import { extract } from 'html2json-wasm';
+import { extract } from '@qretaio/html2json';
 
 // Define your result types for type safety
 interface Tag {
