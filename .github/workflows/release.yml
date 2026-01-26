@@ -105,10 +105,64 @@ jobs:
           path: pkg/*
           if-no-files-found: error
 
-  release:
-    name: Release
+  release-crates:
+    name: Release to crates.io
     runs-on: ubuntu-latest
     needs: [build, wasm]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify tag version matches Cargo.toml
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | awk -F'"' '{print $2}')
+
+          echo "Tag version: $TAG_VERSION"
+          echo "Cargo.toml version: $CARGO_VERSION"
+
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Error: Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSION)"
+            echo "Please update Cargo.toml to version $TAG_VERSION or create a matching tag"
+            exit 1
+          fi
+
+          echo "Version match confirmed: $TAG_VERSION"
+
+      - name: Publish to crates.io
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  release-npm:
+    name: Release to npm
+    runs-on: ubuntu-latest
+    needs: [build, wasm]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: html2json
+          path: pkg
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish to npm
+        working-directory: pkg
+        run: npm publish --access public
+
+  release-github:
+    name: Release to GitHub
+    runs-on: ubuntu-latest
+    needs: [build, wasm, release-crates, release-npm]
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
@@ -117,25 +171,13 @@ jobs:
         with:
           path: artifacts
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-
       - name: Create archives
         run: |
-
-          # List downloaded artifacts for debugging
-          echo "Downloaded artifacts:"
-          ls -la
           cd artifacts
-          ls -la
 
-          # Create WASM archive (handle scoped package name)
+          # Create WASM archive
           if [ -d "html2json" ]; then
             cd html2json
-            # Check if scoped package directory exists inside
             if [ -d "@qretaio" ]; then
               cd "@qretaio"
               tar czf ../../../html2json-wasm.tar.gz html2json
@@ -160,7 +202,7 @@ jobs:
             cd ..
           done
 
-      - name: Create release
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -168,10 +210,3 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish to npm
-        working-directory: artifacts/html2json
-        run: npm publish --access public
-
-      - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
