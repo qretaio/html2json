@@ -80,9 +80,6 @@ console.log(result);
 ### CLI
 
 ```bash
-# Extract from file
-html2json examples/hn.html --spec examples/hn.json
-
 # Extract from stdin (pipe from curl)
 curl -s https://news.ycombinator.com/ | html2json --spec examples/hn.json
 
@@ -90,7 +87,7 @@ curl -s https://news.ycombinator.com/ | html2json --spec examples/hn.json
 cat examples/hn.html | html2json --spec examples/hn.json
 
 # Check output matches expected JSON (useful for testing/CI)
-html2json examples/hn.html --spec examples/hn.json --check expected.json
+cat examples/hn.html | html2json --spec examples/hn.json --check expected.json
 ```
 
 ### CLI Options
